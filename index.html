@@ -383,6 +383,7 @@ function renderApagar(){
  tb.querySelectorAll('tr.lv1').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.cat);apOpen.has(k)?apOpen.delete(k):apOpen.add(k);renderApagar();});
 }
 renderApagar();
+window.showTab=showTab; window.sortP=sortP;
 } /* end run */
 
 async function loadData(){
