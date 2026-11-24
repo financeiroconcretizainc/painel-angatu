@@ -87,9 +87,13 @@ tr.lv0>td.lbl{background:#eef0f3}
 .swatch{width:9px;height:9px;border-radius:3px;display:inline-block;margin:0 8px 0 2px;vertical-align:middle}
 tr.lv1>td{cursor:pointer}
 tr.lv1>td.lbl{padding-left:30px}
-tr.lv2>td.lbl{padding-left:52px;color:var(--mut);font-size:11.5px}
+tr.lv2>td.lbl{padding-left:40px;color:var(--mut);font-size:11.5px}
 tr.lv2>td{color:var(--mut);font-size:11.5px}
-tr.lv1:hover>td,tr.lv2:hover>td{background:#fafbfc}
+tr.lv2[data-fkey]>td{cursor:pointer}
+tr.lv3>td.lbl{padding-left:78px;color:#9aa2ac;font-size:11px}
+tr.lv3>td{color:#9aa2ac;font-size:11px;background:#fcfcfd}
+tr.lv3>td.tot{font-variant-numeric:tabular-nums}
+tr.lv1:hover>td,tr.lv2:hover>td,tr.lv3:hover>td{background:#fafbfc}
 tr.grand>td{position:sticky;bottom:0;background:var(--navy);color:#fff;font-weight:700;z-index:2}
 tr.grand>td.lbl{background:var(--navy);color:#fff}
 .caret{display:inline-block;width:12px;color:var(--mut);font-size:10px;transition:transform .12s}
@@ -354,16 +358,16 @@ const PCOL={'Pessoal':'#283040','Fornecedores':'#B08968','Aluguel':'#5B7089','Im
 function parentOf(cat,tipo){ if(tipo==='Pessoal') return 'Pessoal'; if(cat==='Aluguel') return 'Aluguel'; if(tipo==='Impostos e Taxas'||cat==='IPTU') return 'Impostos'; return 'Fornecedores'; }
 const APTREE={};
 for(const c of APPIV.cats){ if(c.venc<=0) continue; const p=parentOf(c.n,c.tipo); (APTREE[p]=APTREE[p]||{venc:0,cats:[]});
-  const forns=c.f.filter(f=>f.venc>0).map(f=>({n:f.n,venc:f.venc})).sort((a,b)=>b.venc-a.venc);
+  const forns=c.f.filter(f=>f.venc>0).map(f=>({n:f.n,venc:f.venc,notas:(f.notas||[])})).sort((a,b)=>b.venc-a.venc);
   APTREE[p].cats.push({n:c.n,venc:c.venc,forns}); APTREE[p].venc+=c.venc; }
 Object.values(APTREE).forEach(p=>p.cats.sort((a,b)=>b.venc-a.venc));
 const APORD=PARENTS.filter(p=>APTREE[p]).sort((a,b)=>APTREE[b].venc-APTREE[a].venc);
-let apFilter='all'; const apOpenP=new Set(APORD); const apOpenC=new Set();
+let apFilter='all'; const apOpenP=new Set(APORD); const apOpenC=new Set(); const apOpenF=new Set();
 const chipsA=document.getElementById('chipsA');
 chipsA.innerHTML='<span class="chip on" data-t="all">Todas</span>'+APORD.map(p=>`<span class="chip" data-t="${p}"><span class="dot" style="background:${PCOL[p]}"></span>${p}</span>`).join('');
 chipsA.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{chipsA.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');apFilter=c.dataset.t;renderApagar();});
-document.getElementById('apExpand').onclick=()=>{APORD.forEach(p=>{apOpenP.add(p);APTREE[p].cats.forEach(c=>apOpenC.add(p+'||'+c.n));});renderApagar();};
-document.getElementById('apCollapse').onclick=()=>{apOpenP.clear();apOpenC.clear();renderApagar();};
+document.getElementById('apExpand').onclick=()=>{APORD.forEach(p=>{apOpenP.add(p);APTREE[p].cats.forEach(c=>{apOpenC.add(p+'||'+c.n);c.forns.forEach(f=>apOpenF.add(p+'||'+c.n+'||'+f.n));});});renderApagar();};
+document.getElementById('apCollapse').onclick=()=>{apOpenP.clear();apOpenC.clear();apOpenF.clear();renderApagar();};
 const fmtA=v=>v>0?Math.round(v).toLocaleString('pt-BR'):'<span class="zero">·</span>';
 function renderApagar(){
  const q=document.getElementById('searchA').value.toLowerCase();
@@ -381,7 +385,11 @@ function renderApagar(){
      const key=p+'||'+c.n, openC=apOpenC.has(key), hasF=c.forns.length>0;
      h+=`<tr class="lv1" data-key="${encodeURIComponent(key)}"><td class="lbl"><span class="caret">${hasF?(openC?'▾':'▸'):'&nbsp;'}</span>${c.n}</td><td class="tot">${fmtA(c.venc)}</td></tr>`;
      if(openC) for(const f of c.forns){
-       h+=`<tr class="lv2"><td class="lbl">${f.n}</td><td class="tot">${fmtA(f.venc)}</td></tr>`;
+       const fkey=key+'||'+f.n, openF=apOpenF.has(fkey), hasN=(f.notas&&f.notas.length>0);
+       h+=`<tr class="lv2" data-fkey="${encodeURIComponent(fkey)}"><td class="lbl"><span class="caret">${hasN?(openF?'▾':'▸'):'&nbsp;'}</span>${f.n}</td><td class="tot">${fmtA(f.venc)}</td></tr>`;
+       if(openF&&hasN) for(const nt of f.notas){
+         h+=`<tr class="lv3"><td class="lbl">NF ${nt.nf} · venc. ${nt.venc}</td><td class="tot">${fmtA(nt.valor)}</td></tr>`;
+       }
      }
    }
  }
@@ -389,6 +397,7 @@ function renderApagar(){
  const tb=document.getElementById('pivAtable'); tb.innerHTML=h;
  tb.querySelectorAll('tr.lv0').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.p);apOpenP.has(k)?apOpenP.delete(k):apOpenP.add(k);renderApagar();});
  tb.querySelectorAll('tr.lv1').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.key);apOpenC.has(k)?apOpenC.delete(k):apOpenC.add(k);renderApagar();});
+ tb.querySelectorAll('tr.lv2[data-fkey]').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.fkey);apOpenF.has(k)?apOpenF.delete(k):apOpenF.add(k);renderApagar();});
 }
 renderApagar();
 window.showTab=showTab; window.sortP=sortP;
