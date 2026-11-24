@@ -198,7 +198,7 @@ footer{color:var(--mut);font-size:11.5px;text-align:center;padding:26px 0 40px;l
    <div class="chartbox"><canvas id="chCron"></canvas></div>
  </div></div>
  <div class="grid"><div class="card full">
-   <h3>Detalhe por categoria</h3><div class="csub">Em aberto por categoria · clique na categoria para abrir os fornecedores · valores em <b>R$</b></div>
+   <h3>Vencido por categoria mãe</h3><div class="csub"><b>Somente valores vencidos</b> · agrupado por categoria mãe (Pessoal · Fornecedores · Aluguel · Impostos) · clique para abrir categorias e fornecedores · R$</div>
    <div class="tbar"><input id="searchA" placeholder="Buscar categoria ou fornecedor…" oninput="renderApagar()"><div class="chips" id="chipsA"></div>
      <div style="margin-left:auto;display:flex;gap:6px">
        <button class="chip" id="apExpand">Expandir tudo</button>
@@ -348,39 +348,47 @@ new Chart(document.getElementById('chCron'),{type:'bar',
  data:{labels:clab,datasets:[{data:cval,backgroundColor:clab.map(l=>l==='+12m'?'#AEB6C0':'#5B7089'),borderRadius:4}]},
  options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>BRL(c.parsed.y)}}},
   scales:{x:{grid:{display:false}},y:{grid:{color:'#eef0f3'},ticks:{callback:v=>'R$ '+(v/1000)+'k'}}}}});
-/* ---- A PAGAR: tabela expansível categoria -> fornecedor ---- */
-const APCATS=APPIV.cats.slice().sort((a,b)=>b.v-a.v);
-const TIPOSA=[...new Set(APCATS.map(c=>c.tipo))];
-let apFilter='all';                 // 'all' | '__v' (só vencidos) | tipo
-const apOpen=new Set();             // categorias expandidas
+/* ---- A PAGAR: só vencido, por Categoria Mãe -> Categoria -> Fornecedor ---- */
+const PARENTS=['Pessoal','Fornecedores','Aluguel','Impostos'];
+const PCOL={'Pessoal':'#283040','Fornecedores':'#B08968','Aluguel':'#5B7089','Impostos':'#9A8CAF'};
+function parentOf(cat,tipo){ if(tipo==='Pessoal') return 'Pessoal'; if(cat==='Aluguel') return 'Aluguel'; if(tipo==='Impostos e Taxas'||cat==='IPTU') return 'Impostos'; return 'Fornecedores'; }
+const APTREE={};
+for(const c of APPIV.cats){ if(c.venc<=0) continue; const p=parentOf(c.n,c.tipo); (APTREE[p]=APTREE[p]||{venc:0,cats:[]});
+  const forns=c.f.filter(f=>f.venc>0).map(f=>({n:f.n,venc:f.venc})).sort((a,b)=>b.venc-a.venc);
+  APTREE[p].cats.push({n:c.n,venc:c.venc,forns}); APTREE[p].venc+=c.venc; }
+Object.values(APTREE).forEach(p=>p.cats.sort((a,b)=>b.venc-a.venc));
+const APORD=PARENTS.filter(p=>APTREE[p]).sort((a,b)=>APTREE[b].venc-APTREE[a].venc);
+let apFilter='all'; const apOpenP=new Set(APORD); const apOpenC=new Set();
 const chipsA=document.getElementById('chipsA');
-chipsA.innerHTML='<span class="chip on" data-t="all">Todos</span><span class="chip" data-t="__v">Só vencidos</span>'+TIPOSA.map(t=>`<span class="chip" data-t="${t}"><span class="dot" style="background:${COL[t]}"></span>${t}</span>`).join('');
+chipsA.innerHTML='<span class="chip on" data-t="all">Todas</span>'+APORD.map(p=>`<span class="chip" data-t="${p}"><span class="dot" style="background:${PCOL[p]}"></span>${p}</span>`).join('');
 chipsA.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{chipsA.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');apFilter=c.dataset.t;renderApagar();});
-document.getElementById('apExpand').onclick=()=>{APCATS.forEach(c=>apOpen.add(c.n));renderApagar();};
-document.getElementById('apCollapse').onclick=()=>{apOpen.clear();renderApagar();};
+document.getElementById('apExpand').onclick=()=>{APORD.forEach(p=>{apOpenP.add(p);APTREE[p].cats.forEach(c=>apOpenC.add(p+'||'+c.n));});renderApagar();};
+document.getElementById('apCollapse').onclick=()=>{apOpenP.clear();apOpenC.clear();renderApagar();};
 const fmtA=v=>v>0?Math.round(v).toLocaleString('pt-BR'):'<span class="zero">·</span>';
 function renderApagar(){
  const q=document.getElementById('searchA').value.toLowerCase();
- let rows=APCATS;
- if(apFilter==='__v') rows=rows.filter(c=>c.venc>0);
- else if(apFilter!=='all') rows=rows.filter(c=>c.tipo===apFilter);
- if(q) rows=rows.filter(c=>c.n.toLowerCase().includes(q)||c.f.some(f=>f.n.toLowerCase().includes(q)));
- let h='<thead><tr><th class="lbl">Categoria / Fornecedor</th><th>Vencido</th><th>A vencer</th><th class="tot">Total</th></tr></thead><tbody>';
- for(const c of rows){
-   const open=apOpen.has(c.n), hasF=c.f.length>0;
-   h+=`<tr class="lv1" data-cat="${encodeURIComponent(c.n)}"><td class="lbl"><span class="caret">${hasF?(open?'▾':'▸'):'&nbsp;'}</span><span class="swatch" style="background:${COL[c.tipo]}" title="${c.tipo}"></span>${c.n}</td>`+
-     `<td class="num">${c.venc>0?'<span class="vatag va-v">'+fmtA(c.venc)+'</span>':'<span class="zero">·</span>'}</td>`+
-     `<td class="num">${c.aven>0?'<span class="vatag va-a">'+fmtA(c.aven)+'</span>':'<span class="zero">·</span>'}</td>`+
-     `<td class="tot">${fmtA(c.v)}</td></tr>`;
-   if(open) for(const f of c.f){
-     h+=`<tr class="lv2"><td class="lbl">${f.n}</td><td class="num">${fmtA(f.venc)}</td><td class="num">${fmtA(f.aven)}</td><td class="tot">${fmtA(f.v)}</td></tr>`;
+ let h='<thead><tr><th class="lbl">Categoria mãe / Categoria / Fornecedor</th><th class="tot">Vencido (R$)</th></tr></thead><tbody>';
+ let gt=0;
+ const shown=APORD.filter(p=>apFilter==='all'||apFilter===p);
+ for(const p of shown){
+   let cats=APTREE[p].cats;
+   if(q) cats=cats.filter(c=>c.n.toLowerCase().includes(q)||c.forns.some(f=>f.n.toLowerCase().includes(q)));
+   if(!cats.length) continue;
+   const pv=cats.reduce((s,c)=>s+c.venc,0); gt+=pv; const openP=apOpenP.has(p);
+   h+=`<tr class="lv0" data-p="${encodeURIComponent(p)}"><td class="lbl"><span class="caret">${openP?'▾':'▸'}</span><span class="swatch" style="background:${PCOL[p]}"></span>${p}</td><td class="tot">${fmtA(pv)}</td></tr>`;
+   if(!openP) continue;
+   for(const c of cats){
+     const key=p+'||'+c.n, openC=apOpenC.has(key), hasF=c.forns.length>0;
+     h+=`<tr class="lv1" data-key="${encodeURIComponent(key)}"><td class="lbl"><span class="caret">${hasF?(openC?'▾':'▸'):'&nbsp;'}</span>${c.n}</td><td class="tot">${fmtA(c.venc)}</td></tr>`;
+     if(openC) for(const f of c.forns){
+       h+=`<tr class="lv2"><td class="lbl">${f.n}</td><td class="tot">${fmtA(f.venc)}</td></tr>`;
+     }
    }
  }
- const gv=rows.reduce((s,c)=>s+c.venc,0), ga=rows.reduce((s,c)=>s+c.aven,0);
- const parcial=rows.length<APCATS.length;
- h+=`<tr class="grand"><td class="lbl">TOTAL${parcial?' (filtro)':''} · ${rows.length} categorias</td><td>${fmtA(gv)}</td><td>${fmtA(ga)}</td><td>${fmtA(gv+ga)}</td></tr></tbody>`;
+ h+=`<tr class="grand"><td class="lbl">TOTAL VENCIDO${apFilter!=='all'?' · '+apFilter:''}</td><td>${fmtA(gt)}</td></tr></tbody>`;
  const tb=document.getElementById('pivAtable'); tb.innerHTML=h;
- tb.querySelectorAll('tr.lv1').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.cat);apOpen.has(k)?apOpen.delete(k):apOpen.add(k);renderApagar();});
+ tb.querySelectorAll('tr.lv0').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.p);apOpenP.has(k)?apOpenP.delete(k):apOpenP.add(k);renderApagar();});
+ tb.querySelectorAll('tr.lv1').forEach(r=>r.onclick=()=>{const k=decodeURIComponent(r.dataset.key);apOpenC.has(k)?apOpenC.delete(k):apOpenC.add(k);renderApagar();});
 }
 renderApagar();
 window.showTab=showTab; window.sortP=sortP;
